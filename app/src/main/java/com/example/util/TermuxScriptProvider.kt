@@ -112,27 +112,139 @@ object TermuxScriptProvider {
 
         echo "TUBEP3_STAGE:DOWNLOADING"
         echo "TubeP3: Target output: ${'$'}DOWNLOAD_DIR"
+        /system/bin/am broadcast -a com.example.tubep3.ACTION_PROGRESS --es stage DOWNLOADING >/dev/null 2>&1 || true
 
-        # Execute yt-dlp with required audio conversion flags
-        "${'$'}YTDLP_BIN" \
-          --ffmpeg-location "${'$'}FFMPEG_BIN" \
-          --no-playlist \
-          -f bestaudio \
-          -x \
-          --audio-format mp3 \
-          --audio-quality 0 \
-          --embed-thumbnail \
-          --embed-metadata \
-          -P "${'$'}DOWNLOAD_DIR" \
-          -o "%(title)s.%(ext)s" \
-          "${'$'}URL"
+        # Progress pipeline: stream yt-dlp output through python parser to broadcast real progress
+        PROGRESS_PARSER='
+import sys, time, subprocess, re
 
-        EXIT_STATUS=${'$'}?
+last_broadcast = 0.0
+last_stage = "DOWNLOADING"
+
+def send(stage, percent=None, downloaded=None, total=None, speed=None, eta=None, filename=None):
+    cmd = ["/system/bin/am", "broadcast", "-a", "com.example.tubep3.ACTION_PROGRESS", "--es", "stage", stage]
+    if percent is not None:
+        cmd.extend(["--ef", "percent", str(percent)])
+    if downloaded is not None:
+        cmd.extend(["--el", "downloaded", str(downloaded)])
+    if total is not None:
+        cmd.extend(["--el", "total", str(total)])
+    if speed is not None:
+        cmd.extend(["--el", "speed", str(speed)])
+    if eta is not None:
+        cmd.extend(["--el", "eta", str(eta)])
+    if filename:
+        cmd.extend(["--es", "filename", filename])
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+def parse_size(val_str):
+    m = re.match(r"^([\d\.]+)\s*([A-Za-z]+)", val_str)
+    if not m: return None
+    num = float(m.group(1))
+    unit = m.group(2).upper()
+    mult = 1
+    if "KIB" in unit or "KB" in unit: mult = 1024
+    elif "MIB" in unit or "MB" in unit: mult = 1024 * 1024
+    elif "GIB" in unit or "GB" in unit: mult = 1024 * 1024 * 1024
+    return int(num * mult)
+
+def parse_eta(eta_str):
+    parts = eta_str.split(":")
+    if len(parts) == 2:
+        return int(parts[0]) * 60 + int(parts[1])
+    elif len(parts) == 3:
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    return None
+
+for line in sys.stdin:
+    sys.stdout.write(line)
+    sys.stdout.flush()
+    now = time.time()
+
+    if any(k in line for k in ["[ExtractAudio]", "[ThumbnailsConvertor]", "[Metadata]", "[EmbedThumbnail]"]):
+        if last_stage != "CONVERTING":
+            last_stage = "CONVERTING"
+            send("CONVERTING")
+        continue
+
+    if "Destination:" in line:
+        fn = line.split("Destination:", 1)[1].strip()
+        fn = fn.split("/")[-1]
+        if fn.endswith(".mp3"):
+            send("CONVERTING", filename=fn)
+        continue
+
+    if "[download]" in line:
+        m = re.search(r"([\d\.]+)%\s+of\s+([~]?[\d\.]+[A-Za-z]+)(?:\s+at\s+([\d\.]+[A-Za-z]+/s))?(?:\s+ETA\s+([\d:]+))?", line)
+        if m:
+            pct = float(m.group(1))
+            tot = parse_size(m.group(2).replace("~", ""))
+            spd = parse_size(m.group(3).replace("/s", "")) if m.group(3) else None
+            eta = parse_eta(m.group(4)) if m.group(4) else None
+            dl = int(tot * (pct / 100.0)) if tot else None
+            if now - last_broadcast >= 0.4 or pct >= 100.0:
+                last_broadcast = now
+                last_stage = "DOWNLOADING"
+                send("DOWNLOADING", percent=pct, downloaded=dl, total=tot, speed=spd, eta=eta)
+        else:
+            m2 = re.search(r"\s+([\d\.]+[A-Za-z]+)\s+at\s+([\d\.]+[A-Za-z]+/s)", line)
+            if m2 and (now - last_broadcast >= 0.4):
+                last_broadcast = now
+                dl = parse_size(m2.group(1))
+                spd = parse_size(m2.group(2).replace("/s", ""))
+                send("DOWNLOADING", percent=None, downloaded=dl, total=None, speed=spd, eta=None)
+'
+
+        if command -v python3 >/dev/null 2>&1; then
+            PYTHON_EXEC="python3"
+        elif [ -x "${'$'}PREFIX/bin/python3" ]; then
+            PYTHON_EXEC="${'$'}PREFIX/bin/python3"
+        else
+            PYTHON_EXEC=""
+        fi
+
+        if [ -n "${'$'}PYTHON_EXEC" ]; then
+            "${'$'}YTDLP_BIN" \
+              --newline \
+              --ffmpeg-location "${'$'}FFMPEG_BIN" \
+              --no-playlist \
+              -f bestaudio \
+              -x \
+              --audio-format mp3 \
+              --audio-quality 0 \
+              --embed-thumbnail \
+              --embed-metadata \
+              -P "${'$'}DOWNLOAD_DIR" \
+              -o "%(title)s.%(ext)s" \
+              "${'$'}URL" 2>&1 | "${'$'}PYTHON_EXEC" -u -c "${'$'}PROGRESS_PARSER"
+            EXIT_STATUS="${'$'}{PIPESTATUS[0]}"
+        else
+            # Fallback if Python is unavailable
+            "${'$'}YTDLP_BIN" \
+              --ffmpeg-location "${'$'}FFMPEG_BIN" \
+              --no-playlist \
+              -f bestaudio \
+              -x \
+              --audio-format mp3 \
+              --audio-quality 0 \
+              --embed-thumbnail \
+              --embed-metadata \
+              -P "${'$'}DOWNLOAD_DIR" \
+              -o "%(title)s.%(ext)s" \
+              "${'$'}URL"
+            EXIT_STATUS=${'$'}?
+        fi
+
         if [ ${'$'}EXIT_STATUS -eq 0 ]; then
             echo "TUBEP3_STAGE:FINISHED"
+            /system/bin/am broadcast -a com.example.tubep3.ACTION_PROGRESS --es stage FINISHED >/dev/null 2>&1 || true
             echo "TubeP3: Successfully downloaded and converted to MP3 in Downloads."
         else
             echo "TUBEP3_STAGE:FAILED"
+            /system/bin/am broadcast -a com.example.tubep3.ACTION_PROGRESS --es stage FAILED >/dev/null 2>&1 || true
             echo "TubeP3: Operation failed with exit code ${'$'}EXIT_STATUS" >&2
         fi
         exit ${'$'}EXIT_STATUS

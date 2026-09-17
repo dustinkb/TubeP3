@@ -7,5 +7,6 @@ data class DownloadState(
     val statusDetail: String = "",
     val error: DownloadError? = null,
     val logOutput: String? = null,
-    val lastFinishedFile: String? = null
+    val lastFinishedFile: String? = null,
+    val progress: DownloadProgress? = null
 )

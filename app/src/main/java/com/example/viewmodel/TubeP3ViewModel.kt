@@ -6,8 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.backend.DownloadDispatchResult
 import com.example.backend.TermuxBackend
 import com.example.backend.TermuxExecutionResult
+import com.example.backend.TermuxProgressReceiver
 import com.example.error.TermuxErrorClassifier
 import com.example.model.DownloadError
+import com.example.model.DownloadProgress
+import com.example.model.DownloadProgressStage
 import com.example.model.DownloadState
 import com.example.model.DownloadStatus
 import com.example.model.TermuxInstallationStatus
@@ -32,6 +35,7 @@ class TubeP3ViewModel(
     init {
         refreshTermuxStatus()
         observeExecutionResults()
+        observeProgress()
     }
 
     fun refreshTermuxStatus() {
@@ -47,12 +51,44 @@ class TubeP3ViewModel(
         }
     }
 
+    private fun observeProgress() {
+        viewModelScope.launch {
+            TermuxProgressReceiver.progressFlow.collect { progress ->
+                if (progress != null &&
+                    _uiState.value.status != DownloadStatus.FINISHED &&
+                    _uiState.value.status != DownloadStatus.FAILED
+                ) {
+                    _uiState.update { current ->
+                        val mappedStatus = when (progress.stage) {
+                            DownloadProgressStage.CHECKING -> DownloadStatus.PREPARING
+                            DownloadProgressStage.DOWNLOADING -> DownloadStatus.DOWNLOADING
+                            DownloadProgressStage.CONVERTING -> DownloadStatus.CONVERTING
+                            DownloadProgressStage.FINISHING -> DownloadStatus.CONVERTING
+                            DownloadProgressStage.FINISHED -> DownloadStatus.FINISHED
+                            DownloadProgressStage.FAILED -> DownloadStatus.FAILED
+                        }
+                        current.copy(
+                            status = if (current.status == DownloadStatus.FAILED) current.status else mappedStatus,
+                            progress = progress,
+                            lastFinishedFile = progress.filename ?: current.lastFinishedFile
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     fun onUrlChanged(newUrl: String) {
         _uiState.update { current ->
+            val isResettingFromFailed = current.status == DownloadStatus.FAILED
+            if (isResettingFromFailed) {
+                TermuxProgressReceiver.reset()
+            }
             current.copy(
                 urlInput = newUrl,
-                error = if (current.status == DownloadStatus.FAILED) null else current.error,
-                status = if (current.status == DownloadStatus.FAILED) DownloadStatus.READY else current.status
+                error = if (isResettingFromFailed) null else current.error,
+                status = if (isResettingFromFailed) DownloadStatus.READY else current.status,
+                progress = if (isResettingFromFailed) null else current.progress
             )
         }
     }
@@ -62,7 +98,8 @@ class TubeP3ViewModel(
     }
 
     fun clearUrl() {
-        _uiState.update { it.copy(urlInput = "", error = null, status = DownloadStatus.READY) }
+        TermuxProgressReceiver.reset()
+        _uiState.update { it.copy(urlInput = "", error = null, status = DownloadStatus.READY, progress = null) }
     }
 
     fun startDownload() {
@@ -70,17 +107,23 @@ class TubeP3ViewModel(
         val validation = UrlSanitizer.sanitize(rawInput)
 
         if (validation is UrlValidationResult.Invalid) {
+            TermuxProgressReceiver.reset()
             _uiState.update {
                 it.copy(
                     status = DownloadStatus.FAILED,
                     statusDetail = "Invalid YouTube URL",
-                    error = DownloadError.InvalidUrl(validation.reason)
+                    error = DownloadError.InvalidUrl(validation.reason),
+                    progress = null
                 )
             }
             return
         }
 
         val sanitizedUrl = (validation as UrlValidationResult.Valid).sanitizedUrl
+
+        // Reset any stale progress from previous downloads
+        TermuxProgressReceiver.reset()
+        val initialProgress = DownloadProgress(stage = DownloadProgressStage.CHECKING)
 
         // Update state to PREPARING
         _uiState.update {
@@ -89,7 +132,8 @@ class TubeP3ViewModel(
                 activeUrl = sanitizedUrl,
                 statusDetail = "Preparing download...",
                 error = null,
-                logOutput = null
+                logOutput = null,
+                progress = initialProgress
             )
         }
 
@@ -104,11 +148,13 @@ class TubeP3ViewModel(
                 }
             }
             is DownloadDispatchResult.Failure -> {
+                TermuxProgressReceiver.reset()
                 _uiState.update {
                     it.copy(
                         status = DownloadStatus.FAILED,
                         statusDetail = dispatchResult.error.title,
-                        error = dispatchResult.error
+                        error = dispatchResult.error,
+                        progress = null
                     )
                 }
             }
@@ -117,33 +163,48 @@ class TubeP3ViewModel(
 
     private fun handleExecutionResult(result: TermuxExecutionResult) {
         if (result.isSuccess) {
+            val currentProgress = _uiState.value.progress
+            val finalFilename = currentProgress?.filename ?: _uiState.value.lastFinishedFile
+            val finishedProgress = DownloadProgress(
+                stage = DownloadProgressStage.FINISHED,
+                percent = 100f,
+                filename = finalFilename
+            )
+            TermuxProgressReceiver.updateProgress(finishedProgress)
+
             _uiState.update {
                 it.copy(
                     status = DownloadStatus.FINISHED,
                     statusDetail = "Finished. High-quality MP3 saved to Downloads.",
                     error = null,
-                    logOutput = result.fullOutput
+                    logOutput = result.fullOutput,
+                    lastFinishedFile = finalFilename,
+                    progress = finishedProgress
                 )
             }
         } else {
+            TermuxProgressReceiver.reset()
             val classifiedError = TermuxErrorClassifier.classify(result)
             _uiState.update {
                 it.copy(
                     status = DownloadStatus.FAILED,
                     statusDetail = classifiedError.title,
                     error = classifiedError,
-                    logOutput = result.fullOutput
+                    logOutput = result.fullOutput,
+                    progress = null
                 )
             }
         }
     }
 
     fun resetStatus() {
+        TermuxProgressReceiver.reset()
         _uiState.update {
             it.copy(
                 status = DownloadStatus.READY,
                 statusDetail = "",
-                error = null
+                error = null,
+                progress = null
             )
         }
     }

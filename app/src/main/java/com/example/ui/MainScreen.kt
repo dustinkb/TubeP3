@@ -3,6 +3,8 @@ package com.example.ui
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +44,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -54,6 +57,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -62,9 +68,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.DownloadError
+import com.example.model.DownloadProgress
+import com.example.model.DownloadProgressStage
 import com.example.model.DownloadState
 import com.example.model.DownloadStatus
 import com.example.model.TermuxInstallationStatus
@@ -522,6 +531,11 @@ private fun StatusArea(
                         )
                     }
                 }
+            } else if (state.progress != null && state.status != DownloadStatus.READY) {
+                DownloadProgressSection(
+                    progress = state.progress,
+                    isFinished = state.status == DownloadStatus.FINISHED
+                )
             } else if (state.statusDetail.isNotBlank() && state.statusDetail != state.status.displayText) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
@@ -585,3 +599,180 @@ private fun StatusArea(
         }
     }
 }
+
+@Composable
+private fun DownloadProgressSection(
+    progress: DownloadProgress,
+    isFinished: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Top info row: Stage Title (Left) + Percentage or Stage Tag (Right)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = when {
+                    isFinished -> "Download Complete"
+                    progress.stage == DownloadProgressStage.CONVERTING -> "Converting to MP3"
+                    progress.stage == DownloadProgressStage.FINISHING -> "Finishing..."
+                    progress.stage == DownloadProgressStage.DOWNLOADING -> "Downloading"
+                    else -> progress.stage.displayText
+                },
+                color = if (isFinished) SuccessGreen else WhiteText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.testTag("download_progress_stage")
+            )
+
+            if (progress.hasDeterminatePercent && !isFinished) {
+                Text(
+                    text = "${progress.percent!!.toInt()}%",
+                    color = TubeP3Red,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.testTag("download_progress_percent")
+                )
+            } else if (!isFinished && progress.stage == DownloadProgressStage.CONVERTING) {
+                Text(
+                    text = "FFmpeg",
+                    color = LightGraySecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Progress Bar
+        val animatedPercent by animateFloatAsState(
+            targetValue = ((progress.percent ?: 0f) / 100f).coerceIn(0f, 1f),
+            animationSpec = tween(durationMillis = 250),
+            label = "download_progress"
+        )
+
+        if (progress.hasDeterminatePercent && !isFinished) {
+            LinearProgressIndicator(
+                progress = { animatedPercent },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .testTag("download_progress_bar"),
+                color = TubeP3Red,
+                trackColor = Color(0xFF1E1E1E),
+                strokeCap = StrokeCap.Round
+            )
+        } else if (!isFinished) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .testTag("download_progress_bar"),
+                color = TubeP3Red,
+                trackColor = Color(0xFF1E1E1E),
+                strokeCap = StrokeCap.Round
+            )
+        } else {
+            // Finished: Solid filled green bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(SuccessGreen.copy(alpha = 0.6f), RoundedCornerShape(2.dp))
+                    .testTag("download_progress_bar")
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Secondary Details Row: Sizes, Speed, ETA or Filename
+        if (isFinished) {
+            val displayFilename = progress.filename ?: "Audio saved to Downloads"
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = SuccessGreen,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = displayFilename,
+                    color = WhiteText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("download_finished_filename")
+                )
+            }
+        } else {
+            val sizeStr = progress.formattedSizeProgress
+            val speedEtaStr = progress.formattedSpeedAndEta
+
+            when {
+                progress.stage == DownloadProgressStage.CONVERTING -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Almost there...",
+                            color = LightGraySecondary,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = "Encoding 320 kbps MP3",
+                            color = DarkerGrayDisabled,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+                sizeStr != null || speedEtaStr != null -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        if (sizeStr != null) {
+                            Text(
+                                text = sizeStr,
+                                color = LightGraySecondary,
+                                fontSize = 12.sp,
+                                modifier = Modifier.testTag("download_progress_size")
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.width(1.dp))
+                        }
+
+                        if (speedEtaStr != null) {
+                            Text(
+                                text = speedEtaStr,
+                                color = LightGraySecondary,
+                                fontSize = 12.sp,
+                                modifier = Modifier.testTag("download_progress_speed_eta")
+                            )
+                        }
+                    }
+                }
+                progress.stage == DownloadProgressStage.CHECKING -> {
+                    Text(
+                        text = "Contacting YouTube & analyzing audio streams...",
+                        color = LightGraySecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+

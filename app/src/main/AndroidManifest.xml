@@ -37,6 +37,14 @@
                 <action android:name="com.example.tubep3.ACTION_TERMUX_RESULT" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".backend.TermuxProgressReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.tubep3.ACTION_PROGRESS" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

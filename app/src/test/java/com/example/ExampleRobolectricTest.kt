@@ -2,15 +2,21 @@ package com.example
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.example.backend.TermuxExecutionResult
+import com.example.backend.TermuxProgressReceiver
 import com.example.error.TermuxErrorClassifier
 import com.example.model.DownloadError
+import com.example.model.DownloadProgress
+import com.example.model.DownloadProgressStage
 import com.example.util.TermuxScriptProvider
 import com.example.util.UrlSanitizer
 import com.example.util.UrlValidationResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -170,5 +176,84 @@ class ExampleRobolectricTest {
         assertTrue(script.contains("--embed-metadata"))
         assertTrue(script.contains("TUBEP3_STAGE:FINISHED"))
         assertTrue(script.contains("TUBEP3_STAGE:DOWNLOADING"))
+    }
+
+    @Test
+    fun `DownloadProgress formatting utilities format sizes speeds and ETAs accurately`() {
+        val progress = DownloadProgress(
+            stage = DownloadProgressStage.DOWNLOADING,
+            percent = 45.5f,
+            downloadedBytes = 5_242_880L, // 5.0 MB
+            totalBytes = 10_485_760L,     // 10.0 MB
+            speedBytesPerSecond = 1_572_864L, // 1.5 MB/s
+            etaSeconds = 4,
+            filename = "Track.mp3"
+        )
+
+        assertTrue(progress.hasDeterminatePercent)
+        assertEquals("5.0 MB / 10.0 MB", progress.formattedSizeProgress)
+        assertEquals("1.5 MB/s • ETA 4s", progress.formattedSpeedAndEta)
+
+        val indeterminateProgress = DownloadProgress(
+            stage = DownloadProgressStage.DOWNLOADING,
+            percent = null,
+            downloadedBytes = 2_097_152L,
+            totalBytes = null,
+            speedBytesPerSecond = 524_288L,
+            etaSeconds = null
+        )
+
+        assertFalse(indeterminateProgress.hasDeterminatePercent)
+        assertEquals("2.0 MB", indeterminateProgress.formattedSizeProgress)
+        assertEquals("512.0 KB/s", indeterminateProgress.formattedSpeedAndEta)
+
+        val convertingProgress = DownloadProgress(
+            stage = DownloadProgressStage.CONVERTING,
+            filename = "Song.mp3"
+        )
+        assertEquals("Converting to MP3", convertingProgress.stage.displayText)
+        assertFalse(convertingProgress.hasDeterminatePercent)
+    }
+
+    @Test
+    fun `TermuxProgressReceiver parses broadcast intent correctly and emits to progressFlow`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val receiver = TermuxProgressReceiver()
+
+        val intent = Intent(TermuxProgressReceiver.ACTION_PROGRESS).apply {
+            putExtra("stage", "DOWNLOADING")
+            putExtra("percent", 68.2f)
+            putExtra("downloaded", 7_340_032L)
+            putExtra("total", 10_485_760L)
+            putExtra("speed", 1_048_576L)
+            putExtra("eta", 3)
+            putExtra("filename", "CoolSong.mp3")
+        }
+
+        receiver.onReceive(context, intent)
+
+        val emitted = TermuxProgressReceiver.progressFlow.value
+        assertNotNull(emitted)
+        assertEquals(DownloadProgressStage.DOWNLOADING, emitted!!.stage)
+        assertEquals(68.2f, emitted.percent ?: 0f, 0.01f)
+        assertEquals(7_340_032L, emitted.downloadedBytes)
+        assertEquals(10_485_760L, emitted.totalBytes)
+        assertEquals(1_048_576L, emitted.speedBytesPerSecond)
+        assertEquals(3, emitted.etaSeconds)
+        assertEquals("CoolSong.mp3", emitted.filename)
+
+        TermuxProgressReceiver.reset()
+        assertNull(TermuxProgressReceiver.progressFlow.value)
+    }
+
+    @Test
+    fun `tubep3-audio script has broadcast progress integration`() {
+        val script = TermuxScriptProvider.BACKEND_SCRIPT_CONTENT
+        assertTrue(script.contains("com.example.tubep3.ACTION_PROGRESS"))
+        assertTrue(script.contains("PROGRESS_PARSER"))
+        assertTrue(script.contains("--newline"))
+        assertTrue(script.contains("TUBEP3_STAGE:DOWNLOADING"))
+        assertTrue(script.contains("TUBEP3_STAGE:FINISHED"))
+        assertTrue(script.contains("TUBEP3_STAGE:FAILED"))
     }
 }
