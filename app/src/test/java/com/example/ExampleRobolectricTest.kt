@@ -125,4 +125,50 @@ class ExampleRobolectricTest {
         assertTrue(command.contains("TubeP3: External app execution enabled."))
         assertTrue(command.contains("grep -q '^allow-external-apps=true$'"))
     }
+
+    @Test
+    fun `One-step setup command contains all Version 0_2 stage markers and verification steps`() {
+        val command = TermuxScriptProvider.ONE_STEP_SETUP_COMMAND
+        assertTrue(command.contains("TUBEP3_SETUP:STARTING"))
+        assertTrue(command.contains("TUBEP3_SETUP:UPDATING"))
+        assertTrue(command.contains("TUBEP3_SETUP:STORAGE"))
+        assertTrue(command.contains("TUBEP3_SETUP:FFMPEG"))
+        assertTrue(command.contains("TUBEP3_SETUP:YTDLP"))
+        assertTrue(command.contains("TUBEP3_SETUP:BACKEND"))
+        assertTrue(command.contains("TUBEP3_SETUP:EXTERNAL"))
+        assertTrue(command.contains("TUBEP3_SETUP:VERIFYING"))
+        assertTrue(command.contains("TUBEP3_SETUP:READY"))
+        assertTrue(command.contains("TUBEP3_SETUP:FAILED"))
+
+        // Executable verification
+        assertTrue(command.contains("ffmpeg -version"))
+        assertTrue(command.contains("--version"))
+        assertTrue(command.contains("dpkg --configure -a"))
+
+        // Final ready summary checkmarks
+        assertTrue(command.contains("=== TubeP3 backend ready! ==="))
+        assertTrue(command.contains("✓ Termux packages"))
+        assertTrue(command.contains("✓ FFmpeg"))
+        assertTrue(command.contains("✓ yt-dlp"))
+        assertTrue(command.contains("✓ Android storage"))
+        assertTrue(command.contains("✓ TubeP3 backend"))
+        assertTrue(command.contains("✓ External command execution"))
+    }
+
+    @Test
+    fun `Backend script contains non-destructive self-test mode and preserves standard download flags`() {
+        val script = TermuxScriptProvider.BACKEND_SCRIPT_CONTENT
+        assertTrue(script.contains("--self-test"))
+        assertTrue(script.contains("TUBEP3_STAGE:SELF_TEST_OK"))
+
+        // Baseline yt-dlp download flags preserved
+        assertTrue(script.contains("-f bestaudio"))
+        assertTrue(script.contains("-x"))
+        assertTrue(script.contains("--audio-format mp3"))
+        assertTrue(script.contains("--audio-quality 0"))
+        assertTrue(script.contains("--embed-thumbnail"))
+        assertTrue(script.contains("--embed-metadata"))
+        assertTrue(script.contains("TUBEP3_STAGE:FINISHED"))
+        assertTrue(script.contains("TUBEP3_STAGE:DOWNLOADING"))
+    }
 }

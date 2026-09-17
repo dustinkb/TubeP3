@@ -8,13 +8,18 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -88,6 +93,7 @@ fun MainScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     var showSetupDialog by remember { mutableStateOf(false) }
     var showLogDetails by remember { mutableStateOf(false) }
+    val mainScrollState = rememberScrollState()
 
     val isBusy = state.status == DownloadStatus.PREPARING ||
             state.status == DownloadStatus.DOWNLOADING ||
@@ -95,271 +101,265 @@ fun MainScreen(
 
     Scaffold(
         containerColor = AmoledBlack,
+        contentWindowInsets = WindowInsets.safeDrawing,
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .imePadding(),
+            contentAlignment = Alignment.TopCenter
         ) {
-            // Top Bar with Setup Icon
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = { showSetupDialog = true },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTag("open_setup_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Termux Setup & Status",
-                        tint = if (termuxStatus.isReady) LightGraySecondary else TubeP3Red,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Brand Header
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "TubeP3",
-                    color = WhiteText,
-                    fontSize = 40.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = (-1).sp,
-                    modifier = Modifier.testTag("app_title")
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "YouTube Audio Downloader",
-                    color = LightGraySecondary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 0.5.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(36.dp))
-
-            // URL Input Section
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .widthIn(max = 560.dp),
-                horizontalAlignment = Alignment.Start
+                    .widthIn(max = 520.dp)
+                    .verticalScroll(mainScrollState)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = "YouTube URL",
-                    color = LightGraySecondary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-                )
-
-                OutlinedTextField(
-                    value = state.urlInput,
-                    onValueChange = onUrlChange,
+                // Top Bar with Setup Icon
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("url_text_field"),
-                    placeholder = {
-                        Text(
-                            text = "https://www.youtube.com/watch?v=...",
-                            color = DarkerGrayDisabled,
-                            fontSize = 15.sp
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { showSetupDialog = true },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("open_setup_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Termux Setup & Status",
+                            tint = if (termuxStatus.isReady) LightGraySecondary else TubeP3Red,
+                            modifier = Modifier.size(24.dp)
                         )
-                    },
-                    singleLine = true,
-                    enabled = !isBusy,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = WhiteText,
-                        unfocusedTextColor = WhiteText,
-                        disabledTextColor = DarkerGrayDisabled,
-                        focusedContainerColor = DarkGraySurface,
-                        unfocusedContainerColor = DarkGraySurface,
-                        disabledContainerColor = DarkGraySurface,
-                        focusedBorderColor = TubeP3Red,
-                        unfocusedBorderColor = SubtleGrayBorder,
-                        disabledBorderColor = SubtleGrayBorder,
-                        cursorColor = TubeP3Red
-                    ),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Uri,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            keyboardController?.hide()
-                            if (state.urlInput.isNotBlank() && !isBusy) {
-                                onDownloadClick()
-                            }
-                        }
-                    ),
-                    trailingIcon = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (state.urlInput.isNotEmpty() && !isBusy) {
-                                IconButton(
-                                    onClick = onClearUrl,
-                                    modifier = Modifier.size(48.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Clear,
-                                        contentDescription = "Clear URL",
-                                        tint = LightGraySecondary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            } else if (!isBusy) {
-                                IconButton(
-                                    onClick = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        val item = clipboard.primaryClip?.getItemAt(0)
-                                        val text = item?.text?.toString() ?: ""
-                                        if (text.isNotBlank()) {
-                                            onPasteUrl(text.trim())
-                                        }
-                                    },
-                                    modifier = Modifier.size(48.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentPaste,
-                                        contentDescription = "Paste from Clipboard",
-                                        tint = LightGraySecondary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
                     }
-                )
+                }
+
+                // Brand Header with responsive display sizing
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "TubeP3",
+                        color = WhiteText,
+                        fontSize = 34.sp,
+                        lineHeight = 40.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-0.5).sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag("app_title")
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Text(
+                        text = "YouTube Audio Downloader",
+                        color = LightGraySecondary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.25.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Primary Action Button
-                Button(
-                    onClick = {
-                        keyboardController?.hide()
-                        onDownloadClick()
-                    },
-                    enabled = state.urlInput.isNotBlank() && !isBusy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(58.dp)
-                        .testTag("download_audio_button"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = TubeP3Red,
-                        contentColor = WhiteText,
-                        disabledContainerColor = DarkGraySurface,
-                        disabledContentColor = DarkerGrayDisabled
-                    )
+                // URL Input Section
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.Start
                 ) {
-                    if (isBusy) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            color = WhiteText,
-                            strokeWidth = 2.5.dp
+                    Text(
+                        text = "YouTube URL",
+                        color = LightGraySecondary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = state.urlInput,
+                        onValueChange = onUrlChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("url_text_field"),
+                        placeholder = {
+                            Text(
+                                text = "https://www.youtube.com/watch?v=...",
+                                color = DarkerGrayDisabled,
+                                fontSize = 14.sp
+                            )
+                        },
+                        singleLine = true,
+                        enabled = !isBusy,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = WhiteText,
+                            unfocusedTextColor = WhiteText,
+                            disabledTextColor = DarkerGrayDisabled,
+                            focusedContainerColor = DarkGraySurface,
+                            unfocusedContainerColor = DarkGraySurface,
+                            disabledContainerColor = DarkGraySurface,
+                            focusedBorderColor = TubeP3Red,
+                            unfocusedBorderColor = SubtleGrayBorder,
+                            disabledBorderColor = SubtleGrayBorder,
+                            cursorColor = TubeP3Red
+                        ),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                keyboardController?.hide()
+                                if (state.urlInput.isNotBlank() && !isBusy) {
+                                    onDownloadClick()
+                                }
+                            }
+                        ),
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (state.urlInput.isNotEmpty() && !isBusy) {
+                                    IconButton(
+                                        onClick = onClearUrl,
+                                        modifier = Modifier.size(48.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Clear,
+                                            contentDescription = "Clear URL",
+                                            tint = LightGraySecondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                } else if (!isBusy) {
+                                    IconButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            val item = clipboard.primaryClip?.getItemAt(0)
+                                            val text = item?.text?.toString() ?: ""
+                                            if (text.isNotBlank()) {
+                                                onPasteUrl(text.trim())
+                                            }
+                                        },
+                                        modifier = Modifier.size(48.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentPaste,
+                                            contentDescription = "Paste from Clipboard",
+                                            tint = LightGraySecondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Primary Action Button (flexible height with safe minimum touch target)
+                    Button(
+                        onClick = {
+                            keyboardController?.hide()
+                            onDownloadClick()
+                        },
+                        enabled = state.urlInput.isNotBlank() && !isBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 52.dp)
+                            .testTag("download_audio_button"),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = TubeP3Red,
+                            contentColor = WhiteText,
+                            disabledContainerColor = DarkGraySurface,
+                            disabledContentColor = DarkerGrayDisabled
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = state.status.displayText,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "DOWNLOAD AUDIO",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
-                        )
+                    ) {
+                        if (isBusy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = WhiteText,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = state.status.displayText,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "DOWNLOAD AUDIO",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
-            // Status Area
-            StatusArea(
-                state = state,
-                termuxReady = termuxStatus.isReady,
-                onOpenSetup = { showSetupDialog = true },
-                onToggleLog = { showLogDetails = !showLogDetails },
-                isLogVisible = showLogDetails,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 560.dp)
-            )
-
-            Spacer(modifier = Modifier.height(36.dp))
-
-            // Feature Specifications Footer
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 480.dp)
-                    .padding(vertical = 12.dp)
-            ) {
-                HorizontalDivider(
-                    color = SubtleGrayBorder,
-                    thickness = 1.dp,
-                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 12.dp)
+                // Status Area
+                StatusArea(
+                    state = state,
+                    termuxReady = termuxStatus.isReady,
+                    onOpenSetup = { showSetupDialog = true },
+                    onToggleLog = { showLogDetails = !showLogDetails },
+                    isLogVisible = showLogDetails,
+                    modifier = Modifier.fillMaxWidth()
                 )
 
-                Text(
-                    text = "Best available audio",
-                    color = LightGraySecondary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Normal,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "High-quality MP3",
-                    color = LightGraySecondary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Normal,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Save to Downloads",
-                    color = LightGraySecondary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Normal,
-                    textAlign = TextAlign.Center
-                )
+                Spacer(modifier = Modifier.height(18.dp))
 
-                HorizontalDivider(
-                    color = SubtleGrayBorder,
-                    thickness = 1.dp,
-                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 12.dp)
-                )
+                // Feature Specifications Footer
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    HorizontalDivider(
+                        color = SubtleGrayBorder,
+                        thickness = 1.dp,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                    )
+
+                    Text(
+                        text = "Best available audio  •  High-quality MP3  •  Save to Downloads",
+                        color = LightGraySecondary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+
+                    HorizontalDivider(
+                        color = SubtleGrayBorder,
+                        thickness = 1.dp,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                    )
+                }
             }
         }
     }
@@ -382,6 +382,8 @@ private fun StatusArea(
     isLogVisible: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val logScrollState = rememberScrollState()
+
     Box(
         modifier = modifier
             .background(DarkGraySurface, RoundedCornerShape(12.dp))
@@ -394,7 +396,7 @@ private fun StatusArea(
                 },
                 RoundedCornerShape(12.dp)
             )
-            .padding(16.dp)
+            .padding(14.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -402,7 +404,10 @@ private fun StatusArea(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
                     when (state.status) {
                         DownloadStatus.READY -> {
                             Icon(
@@ -439,7 +444,7 @@ private fun StatusArea(
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
                         text = state.status.displayText,
@@ -449,7 +454,7 @@ private fun StatusArea(
                             DownloadStatus.READY -> WhiteText
                             else -> WhiteText
                         },
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.testTag("status_text")
                     )
@@ -458,6 +463,7 @@ private fun StatusArea(
                 if (!termuxReady) {
                     TextButton(
                         onClick = onOpenSetup,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                         modifier = Modifier.testTag("termux_setup_badge_button")
                     ) {
                         Text(
@@ -472,20 +478,20 @@ private fun StatusArea(
 
             // Error or Status Details
             if (state.error != null) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = state.error.description,
                     color = WhiteText,
-                    fontSize = 14.sp,
-                    lineHeight = 19.sp,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
                     fontWeight = FontWeight.Normal
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = state.error.actionableHelp,
                     color = LightGraySecondary,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
                 )
 
                 if (state.error is DownloadError.BackendNotConfigured ||
@@ -501,13 +507,19 @@ private fun StatusArea(
                             containerColor = TubeP3Red,
                             contentColor = WhiteText
                         ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(44.dp)
+                            .defaultMinSize(minHeight = 44.dp)
                             .testTag("resolve_error_setup_button")
                     ) {
-                        Text("Open Termux Setup Guide", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Open Termux Setup Guide",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             } else if (state.statusDetail.isNotBlank() && state.statusDetail != state.status.displayText) {
@@ -515,13 +527,14 @@ private fun StatusArea(
                 Text(
                     text = state.statusDetail,
                     color = LightGraySecondary,
-                    fontSize = 13.sp
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp
                 )
             }
 
             // Optional raw execution log viewer (for diagnostics)
             if (!state.logOutput.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider(color = SubtleGrayBorder, thickness = 0.8.dp)
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -536,7 +549,10 @@ private fun StatusArea(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
-                    TextButton(onClick = onToggleLog) {
+                    TextButton(
+                        onClick = onToggleLog,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
                         Text(
                             text = if (isLogVisible) "Hide Log" else "Show Log",
                             color = LightGraySecondary,
@@ -559,7 +575,9 @@ private fun StatusArea(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
                             lineHeight = 15.sp,
-                            modifier = Modifier.heightIn(max = 140.dp)
+                            modifier = Modifier
+                                .heightIn(max = 140.dp)
+                                .verticalScroll(logScrollState)
                         )
                     }
                 }
